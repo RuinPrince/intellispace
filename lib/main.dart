@@ -7,10 +7,12 @@ import 'core/constants/app_constants.dart';
 import 'core/routing/app_router.dart';
 import 'features/auth/auth_provider.dart';
 import 'repositories/student_directory.dart';
+import 'repositories/academic_schedule_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await StudentDirectory.init();
+  await AcademicScheduleRepository.init();
 
   runApp(
     MultiProvider(

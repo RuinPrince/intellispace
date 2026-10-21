@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/widgets/status_card.dart';
 import '../../repositories/api_attendance_repository.dart';
+import '../../services/absentee_notification_service.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -192,8 +193,107 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
-              
+              const SizedBox(height: 20),
+
+              // 11:00 AM Cutoff Status Card
+              Builder(
+                builder: (context) {
+                  final now = DateTime.now();
+                  final isToday = _selectedDate.year == now.year && _selectedDate.month == now.month && _selectedDate.day == now.day;
+                  final isPast11 = AbsenteeNotificationService.isPast11AmCutoff(now);
+                  final minsLeft = AbsenteeNotificationService.minutesUntil11Am(now);
+
+                  return Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isPast11 ? Colors.red.withOpacity(0.08) : Colors.amber.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: isPast11 ? Colors.red.withOpacity(0.25) : Colors.amber.withOpacity(0.25)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              isPast11 ? Icons.alarm_on_rounded : Icons.alarm_rounded,
+                              color: isPast11 ? Colors.red.shade900 : Colors.brown.shade900,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                isToday
+                                    ? (isPast11
+                                        ? '11:00 AM Cutoff Finalized: Unmarked students are ABSENT'
+                                        : '11:00 AM Cutoff: $minsLeft mins left for morning check-in')
+                                    : 'Attendance Cutoff Finalized for $formattedDate',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: isPast11 ? Colors.red.shade900 : Colors.brown.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Students who fail to check in before 11:00 AM on working days are marked ABSENT and an official SMS is sent to their registered contact numbers.',
+                          style: TextStyle(fontSize: 11, color: isPast11 ? Colors.red.shade900.withOpacity(0.85) : Colors.brown.shade800),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.send_rounded, size: 16),
+                            label: const Text('Review Absent Students & Dispatch Parent SMS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isPast11 ? AppColors.error : AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: () => context.push('/more/attendance/students?date=$dateParam'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Timetable & Calendar Shortcut
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule_rounded, color: AppColors.primary, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text('Class Timetable & Calendar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text('Sections A & B • Circular 321', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => context.push('/more/schedule'),
+                      child: const Text('View', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
               // Actions
               Card(
                 elevation: 0,

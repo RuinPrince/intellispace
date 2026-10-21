@@ -21,9 +21,12 @@ class MoreScreen extends StatelessWidget {
         mainAxisSpacing: 16,
         children: [
           _buildMoreCard(context, 'Attendance', Icons.fact_check_outlined, '/more/attendance', Colors.blue),
+          _buildMoreCard(context, 'Academic Schedule', Icons.table_chart_outlined, '/more/schedule', Colors.deepPurple),
           _buildMoreCard(context, 'Notifications', Icons.notifications_none, '/more/notifications', Colors.red),
           if (isAdmin)
             _buildMoreCard(context, 'Academic & Students', Icons.school_outlined, '/more/admin-students', Colors.orange),
+          if (isAdmin)
+            _buildMoreCard(context, 'Upload Schedule', Icons.cloud_upload_outlined, '/more/admin-schedule', Colors.brown),
           if (isAdmin)
             _buildMoreCard(context, 'Manage Labs', Icons.science_outlined, '/more/admin-labs', Colors.teal),
           if (isAdmin)

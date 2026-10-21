@@ -15,6 +15,8 @@ import '../../features/settings/settings_screen.dart';
 import '../../features/admin/admin_lab_screen.dart';
 import '../../features/admin/admin_teachers_screen.dart';
 import '../../features/admin/admin_student_screen.dart';
+import '../../features/academic/academic_schedule_screen.dart';
+import '../../features/admin/admin_upload_schedule_screen.dart';
 
 class AppRouter {
   final AuthProvider authProvider;
@@ -109,6 +111,18 @@ class AppRouter {
                   GoRoute(
                     path: 'admin-students',
                     builder: (context, state) => const AdminStudentScreen(),
+                  ),
+                  GoRoute(
+                    path: 'schedule',
+                    builder: (context, state) {
+                      final section = state.uri.queryParameters['section'] ?? 'A';
+                      final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '0') ?? 0;
+                      return AcademicScheduleScreen(initialSection: section, initialTabIndex: tab);
+                    },
+                  ),
+                  GoRoute(
+                    path: 'admin-schedule',
+                    builder: (context, state) => const AdminUploadScheduleScreen(),
                   ),
                   GoRoute(
                     path: 'profile',

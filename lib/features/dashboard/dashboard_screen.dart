@@ -186,9 +186,134 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       _buildQuickAction(context, 'Lab Control', Icons.lightbulb_outline, () => context.go('/lab-control')),
                       _buildQuickAction(context, 'Attendance', Icons.fact_check_outlined, () => context.push('/more/attendance')),
+                      _buildQuickAction(context, 'Timetable (A/B)', Icons.table_chart_outlined, () => context.push('/more/schedule')),
+                      _buildQuickAction(context, 'Circular 321', Icons.calendar_month_outlined, () => context.push('/more/schedule?tab=1')),
+                      if (user?.role == AppRole.administrator)
+                        _buildQuickAction(context, 'Upload Schedule', Icons.cloud_upload_outlined, () => context.push('/more/admin-schedule')),
                       _buildQuickAction(context, 'Notifications', Icons.notifications_outlined, () => context.push('/more/notifications')),
                       _buildQuickAction(context, 'Profile', Icons.person_outline, () => context.go('/profile')),
                     ],
+                  ),
+                ),
+                // KLNCE Academic Schedule & 11:00 AM Cutoff Summary Card
+                Card(
+                  elevation: 1.5,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.school_rounded, color: AppColors.primary, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'KLNCE Academic Schedules',
+                                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    'Odd Sem 2026-2027 • Circular 321 • 8 Periods/Day',
+                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.table_chart_rounded, size: 16),
+                                label: const Text('Section A', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () => context.push('/more/schedule?section=A'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.table_chart_rounded, size: 16),
+                                label: const Text('Section B', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () => context.push('/more/schedule?section=B'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.calendar_month_rounded, size: 16),
+                                label: const Text('Circular', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () => context.push('/more/schedule?tab=1'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: () => context.push('/more/attendance/students'),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: now.hour >= 11 ? Colors.red.withOpacity(0.08) : Colors.amber.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: now.hour >= 11 ? Colors.red.withOpacity(0.25) : Colors.amber.withOpacity(0.25),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  now.hour >= 11 ? Icons.alarm_on_rounded : Icons.alarm_rounded,
+                                  size: 16,
+                                  color: now.hour >= 11 ? Colors.red.shade800 : Colors.brown.shade800,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    now.hour >= 11
+                                        ? '11:00 AM Cutoff Active • Unmarked students notified via Parent SMS.'
+                                        : '11:00 AM Cutoff: Students not present by 11 AM will receive Absentee SMS.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: now.hour >= 11 ? Colors.red.shade900 : Colors.brown.shade900,
+                                    ),
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right, size: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
