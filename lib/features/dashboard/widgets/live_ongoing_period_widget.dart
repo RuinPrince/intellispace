@@ -43,10 +43,12 @@ class PeriodStatusInfo {
 
 class LiveOngoingPeriodWidget extends StatefulWidget {
   final String initialSection;
+  final ValueChanged<String>? onSectionChanged;
 
   const LiveOngoingPeriodWidget({
     super.key,
     this.initialSection = 'A',
+    this.onSectionChanged,
   });
 
   @override
@@ -122,6 +124,15 @@ class _LiveOngoingPeriodWidgetState extends State<LiveOngoingPeriodWidget> with 
     }
   }
 
+  @override
+  void didUpdateWidget(covariant LiveOngoingPeriodWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialSection != oldWidget.initialSection && widget.initialSection != _currentSection) {
+      _currentSection = widget.initialSection;
+      _loadTimetable();
+    }
+  }
+
   void _switchSection(String section) {
     if (_currentSection == section) return;
     setState(() {
@@ -129,6 +140,7 @@ class _LiveOngoingPeriodWidgetState extends State<LiveOngoingPeriodWidget> with 
       _isLoading = true;
     });
     _loadTimetable();
+    widget.onSectionChanged?.call(section);
   }
 
   DateTime _parseTimeString(String rawTime, DateTime now) {

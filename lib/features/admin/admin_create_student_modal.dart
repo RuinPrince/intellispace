@@ -181,6 +181,16 @@ class _AdminCreateStudentModalState extends State<AdminCreateStudentModal> {
           _batchController.text = '${batchMatch.group(1)} – ${batchMatch.group(2)}';
         }
 
+        // Dynamically calculate accurate Year (e.g. Year 4) and Semester (e.g. Semester 7)
+        final calc = StudentDirectory.calculateYearAndSemester(
+          batch: _batchController.text,
+          validity: data.validity,
+          rollNo: data.rollNo,
+        );
+        _yearController.text = calc.year;
+        _semesterController.text = calc.semester;
+        _semDurationController.text = calc.semesterDuration;
+
         _isExtracted = true;
       });
 

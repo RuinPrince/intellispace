@@ -18,6 +18,7 @@ class AdminStudentScreen extends StatefulWidget {
 class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchIdController = TextEditingController();
+  String _selectedSectionFilter = 'All';
 
   // Academic Configuration Controllers
   late TextEditingController _semDurationController;
@@ -35,7 +36,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     
     final config = StudentDirectory.academicConfig;
     _semDurationController = TextEditingController(text: config.semesterDuration);
@@ -46,8 +47,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
     _semesterController = TextEditingController(text: config.semester);
     _batchController = TextEditingController(text: config.batch);
 
-    // Default search to Aravindsamy P (235014) to showcase retrieval mechanism immediately
-    _retrieveStudentById('235014');
+    // Initial render starts clean: no lingering student details when search bar is empty
   }
 
   @override
@@ -103,6 +103,10 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
         final res = await _api.get('/students?or=(register_number.eq.$clean,id.eq.$clean)&select=*');
         if (res is List && res.isNotEmpty) {
           final s = res[0] as Map<String, dynamic>;
+          final calc = StudentDirectory.calculateYearAndSemester(
+            batch: '2023 – 2027',
+            rollNo: s['register_number'] ?? clean,
+          );
           found = StudentIdCardDetails(
             id: s['id'].toString(),
             barcode: s['register_number'] ?? clean,
@@ -118,11 +122,11 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
             phones: [s['phone'] ?? '9842014033'],
             dob: s['dob'] ?? '19-12-2005',
             bloodGroup: s['blood_group'] ?? 'O+VE',
-            year: s['year']?.toString() ?? '3',
+            year: calc.year,
             section: s['section'] ?? 'A',
-            semester: 'Semester 5',
+            semester: calc.semester,
             batch: '2023 - 2027',
-            semesterDuration: _semDurationController.text,
+            semesterDuration: calc.semesterDuration,
           );
         }
       } catch (e) {
@@ -160,7 +164,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
           ],
         ),
         content: Text(
-          'Are you sure you want to permanently delete "${student.name}" (${student.barcode})?\n\nThis will remove the student from local storage, attendance rosters, and cloud database.',
+          'Are you sure you want to permanently delete student "${student.name}" (${student.barcode}) from local storage and cloud database?',
         ),
         actions: [
           TextButton(
@@ -197,15 +201,27 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
   }
 
   void _openEditStudentModal(StudentIdCardDetails student, {bool isNew = false}) {
+    // Dynamic recalculation for Year 4 & Semester 7
+    final calc = StudentDirectory.calculateYearAndSemester(
+      batch: student.batch,
+      validity: student.validity,
+      rollNo: student.barcode,
+    );
+    final initialYear = (student.year.isEmpty || student.year == '3') ? calc.year : student.year;
+    final initialSem = (student.semester.isEmpty || student.semester == 'Semester 5') ? calc.semester : student.semester;
+    final initialDuration = (student.semesterDuration.isEmpty || student.semesterDuration.contains('2025'))
+        ? calc.semesterDuration
+        : student.semesterDuration;
+
     final nameCtrl = TextEditingController(text: student.name);
     final rollCtrl = TextEditingController(text: student.barcode);
     final deptCtrl = TextEditingController(text: student.department);
     final courseCtrl = TextEditingController(text: student.course);
-    final yearCtrl = TextEditingController(text: student.year);
-    final secCtrl = TextEditingController(text: student.section);
-    final semCtrl = TextEditingController(text: student.semester);
-    final batchCtrl = TextEditingController(text: student.batch);
-    final semDurationCtrl = TextEditingController(text: student.semesterDuration);
+    final yearCtrl = TextEditingController(text: initialYear);
+    final secCtrl = TextEditingController(text: student.section.isNotEmpty ? student.section : 'A');
+    final semCtrl = TextEditingController(text: initialSem);
+    final batchCtrl = TextEditingController(text: student.batch.isNotEmpty ? student.batch : '2023 – 2027');
+    final semDurationCtrl = TextEditingController(text: initialDuration);
     final addressCtrl = TextEditingController(text: student.address);
     final pinCtrl = TextEditingController(text: student.pincode);
     final emailCtrl = TextEditingController(text: student.email);
@@ -285,7 +301,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
               const SizedBox(height: 12),
               TextField(
                 controller: semCtrl,
-                decoration: const InputDecoration(labelText: 'Semester (e.g. Semester 5)', prefixIcon: Icon(Icons.menu_book), border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Semester (e.g. Semester 7)', prefixIcon: Icon(Icons.menu_book), border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -363,7 +379,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                           'student_name': updated.name,
                           'register_number': updated.barcode,
                           'department': updated.department,
-                          'year': int.tryParse(updated.year) ?? 3,
+                          'year': int.tryParse(updated.year) ?? 4,
                           'section': updated.section,
                           'email': updated.email,
                         },
@@ -428,7 +444,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
     final theme = Theme.of(context);
     final authProvider = context.watch<AuthProvider>();
 
-    // Strict Role-Based Access Control: Teacher login cannot manage students
+    // Strict Role-Based Access Control
     if (authProvider.role != AppRole.administrator) {
       return Scaffold(
         appBar: AppBar(title: const Text('Access Restricted')),
@@ -499,327 +515,191 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(icon: Icon(Icons.badge_outlined), text: 'Student Lookup'),
+            Tab(icon: Icon(Icons.people_alt_outlined), text: 'All Students'),
             Tab(icon: Icon(Icons.school_outlined), text: 'Academic Settings'),
-            Tab(icon: Icon(Icons.list_alt), text: 'All Students'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          // Tab 1: Student Lookup & Details Retrieval
-          _buildStudentLookupTab(theme),
+          // Merged Tab: All Students with Integrated Lookup & Search
+          _buildAllStudentsTab(theme),
 
           // Tab 2: Academic Configuration
           _buildAcademicSettingsTab(theme),
-
-          // Tab 3: All Registered Students Directory
-          _buildAllStudentsTab(theme),
         ],
       ),
     );
   }
 
-  Widget _buildStudentLookupTab(ThemeData theme) {
+  Widget _buildAllStudentsTab(ThemeData theme) {
+    final allStudents = StudentDirectory.getAll();
+    final query = _searchIdController.text.trim().toLowerCase();
+
+    final filtered = allStudents.where((s) {
+      if (_selectedSectionFilter != 'All' && s.section.toUpperCase() != _selectedSectionFilter) {
+        return false;
+      }
+      if (query.isNotEmpty) {
+        final nameMatch = s.name.toLowerCase().contains(query);
+        final rollMatch = s.barcode.toLowerCase().contains(query);
+        final cleanQuery = StudentDirectory.cleanCode(query);
+        final cleanRoll = StudentDirectory.cleanCode(s.barcode);
+        final barcodeMatch = cleanRoll.contains(cleanQuery);
+        final deptMatch = s.department.toLowerCase().contains(query);
+        return nameMatch || rollMatch || barcodeMatch || deptMatch;
+      }
+      return true;
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: () async {
         await StudentDirectory.syncFromCloud();
         if (mounted) setState(() {});
       },
-      child: SingleChildScrollView(
+      child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 80.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Search & Retrieval Input Card
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.search, color: theme.colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Student ID Retrieval Mechanism',
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Enter Student Roll No or Barcode ID to retrieve complete institutional record in a popup.',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _searchIdController,
-                            decoration: InputDecoration(
-                              hintText: 'e.g. 235014, 235025, or 235002',
-                              prefixIcon: const Icon(Icons.person_search),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              isDense: true,
-                            ),
-                            onSubmitted: (val) => _retrieveStudentById(val, showPopup: true),
+        padding: const EdgeInsets.fromLTRB(14.0, 14.0, 14.0, 80.0),
+        children: [
+          // Merged Student Search & Retrieval Header Card
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(14.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.search, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Student Search & ID Retrieval',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Search by roll number, name or barcode. Tap any student to view or edit their institutional record.',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _searchIdController,
+                          decoration: InputDecoration(
+                            hintText: 'e.g. 235014, 235025, Ashish...',
+                            prefixIcon: const Icon(Icons.person_search, size: 20),
+                            suffixIcon: _searchIdController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      _searchIdController.clear();
+                                      setState(() {
+                                        _retrievedStudent = null;
+                                      });
+                                    },
+                                  )
+                                : null,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           ),
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (val) {
+                            if (val.trim().isNotEmpty) {
+                              _retrieveStudentById(val, showPopup: true);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {
+                          if (_searchIdController.text.trim().isNotEmpty) {
+                            _retrieveStudentById(_searchIdController.text, showPopup: true);
+                          }
+                        },
+                        icon: _isSearching
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Icon(Icons.arrow_forward, size: 18),
+                        label: const Text('Retrieve'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Section & Quick Pick Chips
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ChoiceChip(
+                          label: Text('All (${allStudents.length})'),
+                          selected: _selectedSectionFilter == 'All',
+                          onSelected: (sel) {
+                            if (sel) setState(() => _selectedSectionFilter = 'All');
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                        ChoiceChip(
+                          label: Text('Sec A (${allStudents.where((s) => s.section.toUpperCase() == 'A').length})'),
+                          selected: _selectedSectionFilter == 'A',
+                          onSelected: (sel) {
+                            if (sel) setState(() => _selectedSectionFilter = 'A');
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                        ChoiceChip(
+                          label: Text('Sec B (${allStudents.where((s) => s.section.toUpperCase() == 'B').length})'),
+                          selected: _selectedSectionFilter == 'B',
+                          onSelected: (sel) {
+                            if (sel) setState(() => _selectedSectionFilter = 'B');
+                          },
                         ),
                         const SizedBox(width: 10),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: theme.colorScheme.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () => _retrieveStudentById(_searchIdController.text, showPopup: true),
-                          icon: _isSearching 
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                              : const Icon(Icons.arrow_forward),
-                          label: const Text('Retrieve'),
+                        Container(width: 1, height: 20, color: Colors.grey.shade300),
+                        const SizedBox(width: 10),
+                        ActionChip(
+                          avatar: const Icon(Icons.person, size: 14),
+                          label: const Text('235014 (Aravindsamy)', style: TextStyle(fontSize: 11)),
+                          onPressed: () {
+                            _searchIdController.text = '235014';
+                            _retrieveStudentById('235014', showPopup: true);
+                          },
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Quick Access Sample Chips
-                    SizedBox(
-                      height: 38,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8.0, top: 10.0),
-                            child: Text('Quick Pick:', style: theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold)),
-                          ),
-                          ActionChip(
-                            label: const Text('235002 (Ashish P)'),
-                            avatar: const Icon(Icons.person, size: 14),
-                            onPressed: () => _retrieveStudentById('235002', showPopup: true),
-                          ),
-                          const SizedBox(width: 6),
-                          ActionChip(
-                            label: const Text('235014 (Aravindsamy P)'),
-                            avatar: const Icon(Icons.person, size: 14),
-                            onPressed: () => _retrieveStudentById('235014', showPopup: true),
-                          ),
-                          const SizedBox(width: 6),
-                          ActionChip(
-                            label: const Text('235025 (Madhankumar)'),
-                            avatar: const Icon(Icons.person, size: 14),
-                            onPressed: () => _retrieveStudentById('235025', showPopup: true),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 20),
-
-          // Retrieved Student Card
-          if (_retrievedStudent != null) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Retrieved Student Record',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                TextButton.icon(
-                  icon: const Icon(Icons.edit, size: 18),
-                  label: const Text('Edit Details'),
-                  onPressed: () => _openEditStudentModal(_retrievedStudent!),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // College ID Card Format
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  // Orange College Banner
-                  Container(
-                    width: double.infinity,
-                    color: const Color(0xFFE65100),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Column(
-                      children: [
-                        Text(
-                          _retrievedStudent!.college,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        const SizedBox(width: 6),
+                        ActionChip(
+                          avatar: const Icon(Icons.person, size: 14),
+                          label: const Text('235025 (Madhankumar)', style: TextStyle(fontSize: 11)),
+                          onPressed: () {
+                            _searchIdController.text = '235025';
+                            _retrieveStudentById('235025', showPopup: true);
+                          },
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _retrievedStudent!.collegeAffiliation,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 10),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Avatar + Core Identity
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Real Student Photo
-                            StudentAvatar(
-                              avatarUrl: _retrievedStudent!.avatarUrl,
-                              barcode: _retrievedStudent!.barcode,
-                              studentName: _retrievedStudent!.name,
-                              width: 84,
-                              height: 100,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.orange.shade300, width: 2),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _retrievedStudent!.name.toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Color(0xFFC2410C),
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${_retrievedStudent!.course}, ${_retrievedStudent!.department}',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Roll No: ${_retrievedStudent!.barcode}',
-                                    style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Year ${_retrievedStudent!.year} • Section ${_retrievedStudent!.section} • ${_retrievedStudent!.semester}',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo),
-                                  ),
-                                  Text(
-                                    'Validity: ${_retrievedStudent!.validity}',
-                                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2.0),
-                                    child: Text(
-                                      'Blood Group: ${_retrievedStudent!.bloodGroup}',
-                                      style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const Divider(height: 24),
-
-                        // Academic & Contact Details
-                        const Text(
-                          'ACADEMIC & RESIDENTIAL PROFILE',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildDetailRow(Icons.date_range, 'Sem Duration', _retrievedStudent!.semesterDuration),
-                        _buildDetailRow(Icons.layers, 'Batch', _retrievedStudent!.batch),
-                        _buildDetailRow(
-                          Icons.home,
-                          'Address',
-                          _retrievedStudent!.pincode.isNotEmpty && !_retrievedStudent!.address.contains(_retrievedStudent!.pincode)
-                              ? '${_retrievedStudent!.address} (PIN: ${_retrievedStudent!.pincode})'
-                              : _retrievedStudent!.address,
-                        ),
-                        _buildDetailRow(Icons.email, 'Email', _retrievedStudent!.email),
-                        _buildDetailRow(Icons.phone, 'Phones', _retrievedStudent!.phones.join(', ')),
-                        _buildDetailRow(Icons.cake, 'DOB', _retrievedStudent!.dob),
-
-                        const SizedBox(height: 16),
-
-                        // Action Buttons: Edit / Delete / Add Another
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                icon: const Icon(Icons.edit_note),
-                                label: const Text('Edit'),
-                                onPressed: () => _openEditStudentModal(_retrievedStudent!),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.red,
-                                  side: const BorderSide(color: Colors.red),
-                                ),
-                                icon: const Icon(Icons.delete_outline, size: 18),
-                                label: const Text('Delete'),
-                                onPressed: () => _confirmDeleteStudent(_retrievedStudent!),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppConstants.statusGreen,
-                                  foregroundColor: Colors.white,
-                                ),
-                                icon: const Icon(Icons.person_add, size: 18),
-                                label: const Text('Add'),
-                                onPressed: () {
-                                  final newStudent = StudentIdCardDetails(
-                                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                                    barcode: '',
-                                    name: '',
-                                    course: 'B.Tech.',
-                                    department: _departmentController.text,
-                                    college: 'K.L.N. COLLEGE OF ENGINEERING',
-                                    collegeAffiliation: 'An Autonomous Institution, Affiliated to Anna University, Chennai',
-                                    validity: 'August 2023 to May 2027',
-                                    address: 'Madurai, Tamil Nadu',
-                                    pincode: '625012',
-                                    email: '',
-                                    phones: [''],
-                                    dob: '01-01-2005',
-                                    bloodGroup: 'O+VE',
-                                    year: _yearController.text,
-                                    section: _sectionController.text,
-                                    semester: _semesterController.text,
-                                    batch: _batchController.text,
-                                    semesterDuration: _semDurationController.text,
-                                  );
-                                  _openEditStudentModal(newStudent, isNew: true);
-                                },
-                              ),
-                            ),
-                          ],
+                        const SizedBox(width: 6),
+                        ActionChip(
+                          avatar: const Icon(Icons.person, size: 14),
+                          label: const Text('235002 (Ashish)', style: TextStyle(fontSize: 11)),
+                          onPressed: () {
+                            _searchIdController.text = '235002';
+                            _retrieveStudentById('235002', showPopup: true);
+                          },
                         ),
                       ],
                     ),
@@ -827,12 +707,128 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                 ],
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 12),
+
+          // Enrolled Students Roster Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'ENROLLED STUDENTS (${filtered.length})',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueGrey,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Text(
+                  _selectedSectionFilter == 'All' ? 'All Sections' : 'Section $_selectedSectionFilter',
+                  style: TextStyle(fontSize: 11, color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // Student List
+          if (filtered.isEmpty)
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(28.0),
+                child: Column(
+                  children: [
+                    Icon(Icons.search_off, size: 48, color: theme.colorScheme.outline),
+                    const SizedBox(height: 12),
+                    Text(
+                      query.isNotEmpty
+                          ? 'No student found matching "$query"'
+                          : 'No students enrolled in Section $_selectedSectionFilter',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    if (query.isNotEmpty || _selectedSectionFilter != 'All')
+                      TextButton.icon(
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Reset Search & Filters'),
+                        onPressed: () {
+                          _searchIdController.clear();
+                          setState(() {
+                            _selectedSectionFilter = 'All';
+                            _retrievedStudent = null;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...filtered.map((student) {
+              return Card(
+                margin: const EdgeInsets.only(bottom: 10.0),
+                elevation: 1.5,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: StudentAvatar(
+                    avatarUrl: student.avatarUrl,
+                    barcode: student.barcode,
+                    studentName: student.name,
+                    radius: 24,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  title: Text(
+                    student.name.toUpperCase(),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Roll: ${student.barcode} • ${student.department}',
+                          style: TextStyle(color: Colors.blueGrey.shade700, fontSize: 12),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Year ${student.year} • Sec ${student.section} • ${student.semester} (${student.batch})',
+                          style: TextStyle(color: theme.colorScheme.primary, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_note, color: Colors.blueGrey),
+                        tooltip: 'Edit Student',
+                        onPressed: () => _openEditStudentModal(student),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        tooltip: 'Delete Student',
+                        onPressed: () => _confirmDeleteStudent(student),
+                      ),
+                    ],
+                  ),
+                  onTap: () => _showStudentDetailsDialog(student),
+                ),
+              );
+            }),
         ],
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildAcademicSettingsTab(ThemeData theme) {
     return SingleChildScrollView(
@@ -859,7 +855,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'As Administrator, enter institutional parameters including semester duration, department, year, section, and batch. These automatically sync across all student attendance rosters.',
+                    'As Administrator, configure institutional parameters including semester duration, department, academic year, batch, year, and semester. These automatically synchronize with all student attendance rosters.',
                     style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 20),
@@ -869,7 +865,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                     controller: _semDurationController,
                     decoration: const InputDecoration(
                       labelText: 'Semester Duration',
-                      hintText: 'e.g. August 2025 – December 2025',
+                      hintText: 'e.g. August 2026 – December 2026',
                       prefixIcon: Icon(Icons.date_range),
                       border: OutlineInputBorder(),
                     ),
@@ -893,7 +889,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                     controller: _academicYearController,
                     decoration: const InputDecoration(
                       labelText: 'Academic Year',
-                      hintText: 'e.g. 2025 – 2026',
+                      hintText: 'e.g. 2026 – 2027',
                       prefixIcon: Icon(Icons.calendar_today),
                       border: OutlineInputBorder(),
                     ),
@@ -916,8 +912,8 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                   TextField(
                     controller: _yearController,
                     decoration: const InputDecoration(
-                      labelText: 'Year',
-                      hintText: 'e.g. 3',
+                      labelText: 'Year (1-4)',
+                      hintText: 'e.g. 4',
                       prefixIcon: Icon(Icons.timeline),
                       border: OutlineInputBorder(),
                     ),
@@ -941,7 +937,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                     controller: _semesterController,
                     decoration: const InputDecoration(
                       labelText: 'Semester',
-                      hintText: 'e.g. Semester 5',
+                      hintText: 'e.g. Semester 7',
                       prefixIcon: Icon(Icons.menu_book),
                       border: OutlineInputBorder(),
                     ),
@@ -972,84 +968,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
     );
   }
 
-  Widget _buildAllStudentsTab(ThemeData theme) {
-    final students = StudentDirectory.getAll();
-
-    return RefreshIndicator(
-      onRefresh: () async {
-        await StudentDirectory.syncFromCloud();
-        if (mounted) setState(() {});
-      },
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 80.0),
-        itemCount: students.length,
-        itemBuilder: (context, index) {
-          final student = students[index];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 10.0),
-            child: ListTile(
-              leading: StudentAvatar(
-                avatarUrl: student.avatarUrl,
-                barcode: student.barcode,
-                studentName: student.name,
-                radius: 24,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              title: Text(student.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('${student.barcode} • ${student.department}\nYear ${student.year} • Sec ${student.section} • ${student.batch}'),
-              isThreeLine: true,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    tooltip: 'Edit Student',
-                    onPressed: () => _openEditStudentModal(student),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    tooltip: 'Delete Student',
-                    onPressed: () => _confirmDeleteStudent(student),
-                  ),
-                ],
-              ),
-              onTap: () => _showStudentDetailsDialog(student),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: Colors.blueGrey),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 105,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showStudentDetailsDialog(StudentIdCardDetails student) {
-    final theme = Theme.of(context);
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -1095,9 +1014,10 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                           avatarUrl: student.avatarUrl,
                           barcode: student.barcode,
                           studentName: student.name,
-                          width: 72,
-                          height: 90,
-                          borderRadius: BorderRadius.circular(8),
+                          width: 76,
+                          height: 94,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.orange.shade300, width: 2),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -1105,28 +1025,39 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                student.name,
-                                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                                student.name.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Color(0xFFC2410C),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '${student.course} ${student.department}',
-                                style: theme.textTheme.bodySmall,
+                                '${student.course}, ${student.department}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               ),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Roll No: ${student.barcode}',
+                                style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Year ${student.year} • Section ${student.section} • ${student.semester}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo),
+                              ),
+                              Text(
+                                'Validity: ${student.validity}',
+                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2.0),
                                 child: Text(
-                                  'Reg: ${student.barcode}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: theme.colorScheme.onPrimaryContainer,
-                                  ),
+                                  'Blood Group: ${student.bloodGroup}',
+                                  style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -1135,24 +1066,49 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                       ],
                     ),
                     const Divider(height: 24),
-                    // Details Grid
-                    _buildDetailRow(Icons.school, 'Year / Sec', 'Year ${student.year} • Sec ${student.section}'),
-                    _buildDetailRow(Icons.menu_book, 'Semester', student.semester),
+
+                    // Academic & Residential Profile
+                    const Text(
+                      'ACADEMIC & RESIDENTIAL PROFILE',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDetailRow(Icons.date_range, 'Sem Duration', student.semesterDuration),
                     _buildDetailRow(Icons.layers, 'Batch', student.batch),
-                    _buildDetailRow(Icons.date_range, 'Validity', student.validity),
-                    _buildDetailRow(Icons.bloodtype, 'Blood Group', student.bloodGroup),
-                    _buildDetailRow(Icons.cake, 'DOB', student.dob),
+                    _buildDetailRow(
+                      Icons.home,
+                      'Address',
+                      student.pincode.isNotEmpty && !student.address.contains(student.pincode)
+                          ? '${student.address} (PIN: ${student.pincode})'
+                          : student.address,
+                    ),
                     _buildDetailRow(Icons.email, 'Email', student.email),
-                    _buildDetailRow(Icons.phone, 'Phone(s)', student.phones.join(', ')),
-                    _buildDetailRow(Icons.home, 'Address', '${student.address}${student.pincode.isNotEmpty ? " - ${student.pincode}" : ""}'),
+                    _buildDetailRow(Icons.phone, 'Phones', student.phones.join(', ')),
+                    _buildDetailRow(Icons.cake, 'DOB', student.dob),
+
                     const SizedBox(height: 16),
-                    // Action Buttons
+
+                    // Action Buttons Row: Edit / Delete / Add
+                    // Delete button alignment issue resolved with compact padding and FittedBox
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            icon: const Icon(Icons.edit_note, size: 18),
-                            label: const Text('Edit'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.edit_note, size: 16),
+                            label: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Edit',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                             onPressed: () {
                               Navigator.pop(ctx);
                               _openEditStudentModal(student);
@@ -1165,9 +1121,20 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red,
                               side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            icon: const Icon(Icons.delete_outline, size: 18),
-                            label: const Text('Delete'),
+                            icon: const Icon(Icons.delete_outline, size: 16),
+                            label: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Delete',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                             onPressed: () {
                               Navigator.pop(ctx);
                               _confirmDeleteStudent(student);
@@ -1176,9 +1143,52 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('Close'),
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppConstants.statusGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.person_add, size: 16),
+                            label: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Add',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              final calc = StudentDirectory.calculateYearAndSemester(
+                                batch: _batchController.text,
+                              );
+                              final newStudent = StudentIdCardDetails(
+                                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                                barcode: '',
+                                name: '',
+                                course: 'B.Tech.',
+                                department: _departmentController.text,
+                                college: 'K.L.N. COLLEGE OF ENGINEERING',
+                                collegeAffiliation: 'An Autonomous Institution, Affiliated to Anna University, Chennai',
+                                validity: 'August 2023 to May 2027',
+                                address: 'Madurai, Tamil Nadu',
+                                pincode: '625012',
+                                email: '',
+                                phones: [''],
+                                dob: '01-01-2005',
+                                bloodGroup: 'O+VE',
+                                year: calc.year,
+                                section: _sectionController.text,
+                                semester: calc.semester,
+                                batch: _batchController.text,
+                                semesterDuration: calc.semesterDuration,
+                              );
+                              _openEditStudentModal(newStudent, isNew: true);
+                            },
                           ),
                         ),
                       ],
@@ -1189,6 +1199,32 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: Colors.blueGrey),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 105,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
       ),
     );
   }

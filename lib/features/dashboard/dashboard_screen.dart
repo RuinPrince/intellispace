@@ -23,6 +23,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _energyTimer;
   
   bool _isLoading = true;
+  String _selectedSection = 'A';
   Map<String, dynamic> _dashboardData = {};
   TodayEnergySummary? _energySummary;
 
@@ -54,11 +55,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({String? section}) async {
+    final activeSection = section ?? _selectedSection;
     setState(() => _isLoading = true);
     
     try {
-      _dashboardData = await _dashboardRepo.getDashboardData();
+      _dashboardData = await _dashboardRepo.getDashboardData(section: activeSection);
     } catch (_) {
       // Handled silently with fallback
     }
@@ -75,6 +77,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _changeSection(String section) async {
+    if (_selectedSection == section) return;
+    setState(() => _selectedSection = section);
+    await _loadData(section: section);
   }
 
   @override
@@ -163,7 +171,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 20),
 
                 // Live Ongoing Period & Real-Time Countdown Widget
-                const LiveOngoingPeriodWidget(),
+                LiveOngoingPeriodWidget(
+                  initialSection: _selectedSection,
+                  onSectionChanged: (sec) => _changeSection(sec),
+                ),
 
                 // Status Grid
                 GridView.count(
@@ -175,7 +186,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   childAspectRatio: 1.2,
                   children: [
                     StatusCard(
-                      title: 'Today\'s Attendance',
+                      title: 'Today\'s Attendance (Sec $_selectedSection)',
                       value: '${_dashboardData['attendance']?['percentage'] ?? 0}%',
                       subtitle: '${_dashboardData['attendance']?['present'] ?? 0} / ${_dashboardData['attendance']?['total'] ?? 0} students',
                       icon: Icons.groups,
