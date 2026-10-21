@@ -204,7 +204,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.12),
+                  color: Colors.amber.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
@@ -259,6 +259,224 @@ class _StudentListScreenState extends State<StudentListScreen> {
         );
       }
     }
+  }
+
+  Future<void> _triggerOnDemandAbsentSms() async {
+    final absentStudents = _records.where((r) {
+      if (_sectionFilter != 'All' && r.student.section.toUpperCase() != _sectionFilter.toUpperCase()) {
+        return false;
+      }
+      return !r.isPresent;
+    }).toList();
+
+    if (absentStudents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No absent students found to notify!'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      return;
+    }
+
+    final dateStr = DateFormat('dd/MM/yyyy').format(_selectedDate);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.send_rounded, color: AppColors.primary),
+            SizedBox(width: 8),
+            Expanded(child: Text('Admin On-Demand SMS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Dispatch Absent SMS anytime for $dateStr.'),
+            const SizedBox(height: 8),
+            Text(
+              'Targeting ${absentStudents.length} absent student(s) in ${_sectionFilter == "All" ? "all sections" : "Section $_sectionFilter"}.',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const Divider(height: 20),
+            const Text('Absent Students:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 120),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: absentStudents.length,
+                itemBuilder: (c, i) {
+                  final s = absentStudents[i].student;
+                  final card = StudentDirectory.findByBarcode(s.registerNumber);
+                  final phones = card?.phones.isNotEmpty == true ? card!.phones.join(', ') : (s.phone ?? "N/A");
+                  return Text('• ${s.name} (${s.registerNumber}) - $phones', style: const TextStyle(fontSize: 11));
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Dispatch SMS Now', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isDispatchingSms = true);
+    try {
+      final res = await AbsenteeNotificationService.sendAdminOnDemandAbsenteeSms(
+        date: _selectedDate,
+        sectionFilter: _sectionFilter == 'All' ? null : _sectionFilter,
+      );
+      await _loadData();
+      if (mounted) {
+        setState(() => _isDispatchingSms = false);
+        final count = res['sms_success_count'] ?? 0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('On-Demand SMS dispatched to $count parent(s)! Logged to Supabase.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDispatchingSms = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error dispatching SMS: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  void _showIndividualSmsDialog(AttendanceRecord record) {
+    final details = StudentDirectory.findByBarcode(record.student.registerNumber);
+    final List<String> phones = (details != null && details.phones.isNotEmpty)
+        ? details.phones
+        : (record.student.phone != null && record.student.phone!.isNotEmpty ? [record.student.phone!] : []);
+
+    final dateStr = DateFormat('dd/MM/yyyy').format(_selectedDate);
+    final defaultMsg = 'KLNCE ATTENDANCE ALERT: Student ${record.student.name} (Reg No: ${record.student.registerNumber}, Dept: ${record.student.department}, Sec: ${record.student.section}) is marked ABSENT today ($dateStr). Please contact department.';
+
+    final msgCtrl = TextEditingController(text: defaultMsg);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          left: 16,
+          right: 16,
+          top: 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.sms_rounded, color: AppColors.primary, size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Send Absent SMS to ${record.student.name}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Roll No: ${record.student.registerNumber} • Sec ${record.student.section} • Date: $dateStr',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const Divider(height: 18),
+            const Text(
+              'Registered Parent Contacts in Database:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              phones.isNotEmpty ? phones.join('  •  ') : 'No registered phone numbers found in database',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: phones.isNotEmpty ? AppColors.primary : AppColors.error,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('SMS Text Preview (Editable):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: msgCtrl,
+              maxLines: 3,
+              style: const TextStyle(fontSize: 12),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.grey.withValues(alpha: 0.08),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.send_rounded, size: 18),
+                label: const Text('Dispatch SMS to Parents Now'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: phones.isEmpty ? null : () async {
+                  Navigator.pop(ctx);
+                  setState(() => _isDispatchingSms = true);
+                  final res = await AbsenteeNotificationService.sendAdminOnDemandAbsenteeSms(
+                    date: _selectedDate,
+                    specificRollNumber: record.student.registerNumber,
+                    customMessage: msgCtrl.text.trim(),
+                  );
+                  await _loadData();
+                  if (mounted) {
+                    setState(() => _isDispatchingSms = false);
+                    final ok = (res['sms_success_count'] ?? 0) > 0;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(ok
+                            ? 'SMS dispatched to ${record.student.name}\'s parents!'
+                            : 'SMS logged to Supabase and dispatched via SMS intent.'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showSmsAuditLogsModal() async {
@@ -321,7 +539,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: log.success ? Colors.green.withOpacity(0.12) : Colors.red.withOpacity(0.12),
+                                          color: log.success ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
@@ -404,7 +622,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                     Text(
                       '(An Autonomous Institution, Affiliated to Anna University, Chennai)\nPottapalayam - 630 612',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 10),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 10),
                     ),
                   ],
                 ),
@@ -529,7 +747,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
           // Date Selector Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -602,7 +820,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 isDense: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
               ),
               onChanged: (value) => setState(() => _searchQuery = value),
             ),
@@ -636,8 +854,8 @@ class _StudentListScreenState extends State<StudentListScreen> {
                             borderRadius: BorderRadius.circular(14),
                             side: BorderSide(
                               color: record.isPresent 
-                                  ? AppConstants.statusGreen.withOpacity(0.4) 
-                                  : AppConstants.statusRed.withOpacity(0.4),
+                                  ? AppConstants.statusGreen.withValues(alpha: 0.4) 
+                                  : AppConstants.statusRed.withValues(alpha: 0.4),
                             ),
                           ),
                           child: InkWell(
@@ -700,7 +918,13 @@ class _StudentListScreenState extends State<StudentListScreen> {
                                     ),
                                   ),
 
-                                  // Actions: QR view + Presence Switch
+                                  // Actions: Individual Absent SMS + QR view + Presence Switch
+                                  if (!record.isPresent)
+                                    IconButton(
+                                      icon: const Icon(Icons.sms_rounded, size: 20, color: Color(0xFFE65100)),
+                                      tooltip: 'Send Absent SMS to Parents (Admin)',
+                                      onPressed: () => _showIndividualSmsDialog(record),
+                                    ),
                                   IconButton(
                                     icon: const Icon(Icons.qr_code, size: 20),
                                     tooltip: 'View ID Card',
@@ -709,7 +933,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                                   ),
                                   Switch(
                                     value: record.isPresent,
-                                    activeColor: AppConstants.statusGreen,
+                                    activeThumbColor: AppConstants.statusGreen,
                                     onChanged: (value) => _toggleAttendance(record, value),
                                   ),
                                 ],
@@ -739,8 +963,8 @@ class _StudentListScreenState extends State<StudentListScreen> {
   }
 
   Widget _buildAbsenteeCutoffBanner(bool isToday, bool isPast11, int minsLeft, int absentCount) {
-    Color bannerBg = isPast11 ? Colors.red.withOpacity(0.08) : Colors.amber.withOpacity(0.08);
-    Color bannerBorder = isPast11 ? Colors.red.withOpacity(0.3) : Colors.amber.withOpacity(0.3);
+    Color bannerBg = isPast11 ? Colors.red.withValues(alpha: 0.08) : Colors.amber.withValues(alpha: 0.08);
+    Color bannerBorder = isPast11 ? Colors.red.withValues(alpha: 0.3) : Colors.amber.withValues(alpha: 0.3);
     Color bannerText = isPast11 ? Colors.red.shade900 : Colors.brown.shade900;
     IconData icon = isPast11 ? Icons.alarm_on_rounded : Icons.alarm_rounded;
 
@@ -809,6 +1033,18 @@ class _StudentListScreenState extends State<StudentListScreen> {
                 onPressed: _showSmsAuditLogsModal,
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              icon: const Icon(Icons.send_and_archive_rounded, size: 16, color: Color(0xFFE65100)),
+              label: Text(
+                'Admin On-Demand: Send SMS to All Absent ($absentCount) Anytime',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFFE65100)),
+              ),
+              onPressed: _isDispatchingSms ? null : _triggerOnDemandAbsentSms,
+            ),
           ),
         ],
       ),

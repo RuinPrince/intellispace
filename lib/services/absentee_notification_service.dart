@@ -271,6 +271,115 @@ class AbsenteeNotificationService {
     };
   }
 
+  /// Dispatches Absentee SMS On-Demand anytime Admin wants (no 11:00 AM cutoff restriction)
+  /// Can be triggered for all absent students, by section, or for a single specific student.
+  static Future<Map<String, dynamic>> sendAdminOnDemandAbsenteeSms({
+    DateTime? date,
+    String? sectionFilter,
+    String? specificRollNumber,
+    String? customMessage,
+  }) async {
+    final targetDate = date ?? DateTime.now();
+    final displayDate = DateFormat('dd/MM/yyyy').format(targetDate);
+
+    final records = await _attRepo.getRecordsForDate(targetDate);
+    final List<SmsDispatchLog> dispatchLogs = [];
+    int markedAbsentCount = 0;
+    int smsSuccessCount = 0;
+
+    for (final record in records) {
+      // If specific roll number targeted
+      if (specificRollNumber != null && specificRollNumber.isNotEmpty) {
+        if (record.student.registerNumber != specificRollNumber) continue;
+      } else {
+        // Section filter
+        if (sectionFilter != null && sectionFilter.isNotEmpty && sectionFilter != 'All') {
+          if (record.student.section.toUpperCase() != sectionFilter.toUpperCase()) {
+            continue;
+          }
+        }
+        // Only target absent students
+        if (record.isPresent) continue;
+      }
+
+      // Mark student as absent in database
+      await _attRepo.markAttendance(record.student.id, 'absent', date: targetDate);
+      markedAbsentCount++;
+
+      // Retrieve registered contact numbers
+      final card = StudentDirectory.findByBarcode(record.student.registerNumber);
+      List<String> targetPhones = [];
+      if (card != null && card.phones.isNotEmpty) {
+        targetPhones = card.phones;
+      } else if (record.student.phone != null && record.student.phone!.isNotEmpty) {
+        targetPhones = [record.student.phone!];
+      }
+
+      if (targetPhones.isEmpty) {
+        dispatchLogs.add(SmsDispatchLog(
+          studentName: record.student.name,
+          rollNumber: record.student.registerNumber,
+          section: record.student.section,
+          phone: 'N/A',
+          message: 'No contact numbers found in database',
+          timestamp: DateTime.now(),
+          success: false,
+          status: 'NO_PHONE_NUMBER',
+        ));
+        continue;
+      }
+
+      // Format message (custom or official)
+      final smsText = (customMessage != null && customMessage.trim().isNotEmpty)
+          ? customMessage.trim()
+          : 'KLNCE ATTENDANCE ALERT: Student ${record.student.name} (Reg No: ${record.student.registerNumber}, Dept: ${record.student.department}, Sec: ${record.student.section}) is marked ABSENT today ($displayDate). Please contact the department.';
+
+      bool anySuccess = false;
+      for (final phone in targetPhones) {
+        final ok = await _sendSmsNative(phone, smsText);
+        if (ok) anySuccess = true;
+      }
+
+      // Record in Supabase Cloud
+      try {
+        await _api.post('/notifications', body: {
+          'user_id': 1,
+          'notification_type': 'attendance',
+          'title': 'ON-DEMAND SMS: ${record.student.name} (${record.student.registerNumber})',
+          'message': 'Admin dispatched SMS to [${targetPhones.join(", ")}]: "$smsText"',
+          'severity': 'warning',
+          'is_read': false,
+        });
+      } catch (e) {
+        debugPrint('Error recording on-demand SMS to cloud: $e');
+      }
+
+      if (anySuccess) smsSuccessCount++;
+
+      dispatchLogs.add(SmsDispatchLog(
+        studentName: record.student.name,
+        rollNumber: record.student.registerNumber,
+        section: record.student.section,
+        phone: targetPhones.join(', '),
+        message: smsText,
+        timestamp: DateTime.now(),
+        success: anySuccess,
+        status: anySuccess ? 'DISPATCHED_BY_ADMIN' : 'SMS_SENT',
+      ));
+    }
+
+    await _saveAuditLogs(dispatchLogs);
+
+    return {
+      'success': true,
+      'status': 'COMPLETED',
+      'message': 'Admin dispatched SMS to $markedAbsentCount absent student(s).',
+      'marked_absent_count': markedAbsentCount,
+      'sms_success_count': smsSuccessCount,
+      'logs': dispatchLogs,
+    };
+  }
+
   /// Retrieve all SMS audit logs from local storage
   static Future<List<SmsDispatchLog>> getAuditLogs() async {
     try {

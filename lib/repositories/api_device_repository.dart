@@ -2,6 +2,7 @@ import '../core/api/api_client.dart';
 import '../core/api/api_config.dart';
 import '../models/device.dart';
 import '../core/constants/app_constants.dart';
+import '../services/energy_tracking_service.dart';
 
 class ApiDeviceRepository {
   final ApiClient _api = ApiClient();
@@ -49,10 +50,12 @@ class ApiDeviceRepository {
     }
   }
 
-  /// Toggles a device with optimistic update and audit logging to device_logs
+  /// Toggles a device with optimistic update, energy consumption tracking, and audit logging
   Future<bool> toggleDevice(
     String deviceId, 
     bool turnOn, {
+    String? deviceName,
+    String? deviceType,
     String? userId, 
     String? oldState,
   }) async {
@@ -85,9 +88,17 @@ class ApiDeviceRepository {
             'created_at': nowUtc,
           },
         );
-      } catch (_) {
-        // Non-blocking audit log
-      }
+      } catch (_) {}
+
+      // 3. Record accurate energy consumption
+      final dType = deviceType ?? (deviceId == '4' ? 'fan' : 'light');
+      final dName = deviceName ?? (deviceId == '4' ? 'Exhaust Ventilation Fan' : 'Main Ceiling Lights');
+      await EnergyTrackingService.recordDeviceStateChange(
+        deviceId: deviceId,
+        deviceType: dType,
+        deviceName: dName,
+        isOn: turnOn,
+      );
 
       return true;
     } catch (_) {

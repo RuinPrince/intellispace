@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 /// Represents an individual milestone/event in the KLNCE Academic Calendar
 class CalendarEvent {
   final int sno;

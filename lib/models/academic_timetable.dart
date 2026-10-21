@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 /// Represents a single period in the KLNCE timetable
 class TimetablePeriod {
   final int periodNumber; // 1 to 8 (or 0 for break/lunch)

@@ -206,9 +206,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   return Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isPast11 ? Colors.red.withOpacity(0.08) : Colors.amber.withOpacity(0.08),
+                      color: isPast11 ? Colors.red.withValues(alpha: 0.08) : Colors.amber.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: isPast11 ? Colors.red.withOpacity(0.25) : Colors.amber.withOpacity(0.25)),
+                      border: Border.all(color: isPast11 ? Colors.red.withValues(alpha: 0.25) : Colors.amber.withValues(alpha: 0.25)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,23 +239,42 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Students who fail to check in before 11:00 AM on working days are marked ABSENT and an official SMS is sent to their registered contact numbers.',
-                          style: TextStyle(fontSize: 11, color: isPast11 ? Colors.red.shade900.withOpacity(0.85) : Colors.brown.shade800),
+                          'Automatic Cutoff: Unmarked students at 11:00 AM receive absentee alerts.\nAdmin Feature: You can also dispatch absent SMS on-demand at ANY time of day!',
+                          style: TextStyle(fontSize: 11, color: isPast11 ? Colors.red.shade900.withValues(alpha: 0.85) : Colors.brown.shade800),
                         ),
                         const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.send_rounded, size: 16),
-                            label: const Text('Review Absent Students & Dispatch Parent SMS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: isPast11 ? AppColors.error : AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.send_rounded, size: 16),
+                                label: const Text('Review Absent Students & SMS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isPast11 ? AppColors.error : AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () => context.push('/more/attendance/students?date=$dateParam'),
+                              ),
                             ),
-                            onPressed: () => context.push('/more/attendance/students?date=$dateParam'),
-                          ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 2,
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.sms_rounded, size: 15),
+                                label: const Text('SMS Anytime', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: isPast11 ? AppColors.error : AppColors.primary,
+                                  side: BorderSide(color: isPast11 ? AppColors.error : AppColors.primary),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () => context.push('/more/attendance/students?date=$dateParam'),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

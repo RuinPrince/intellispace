@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +8,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/widgets/status_card.dart';
 import '../auth/auth_provider.dart';
 import '../../repositories/api_dashboard_repository.dart';
+import '../../services/energy_tracking_service.dart';
 import 'widgets/live_ongoing_period_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -18,14 +20,38 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final ApiDashboardRepository _dashboardRepo = ApiDashboardRepository();
+  Timer? _energyTimer;
   
   bool _isLoading = true;
   Map<String, dynamic> _dashboardData = {};
+  TodayEnergySummary? _energySummary;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _energyTimer = Timer.periodic(const Duration(seconds: 10), (_) => _refreshEnergy());
+  }
+
+  @override
+  void dispose() {
+    _energyTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshEnergy() async {
+    if (!mounted) return;
+    final bool isFanOn = _dashboardData['devices']?['is_fan_on'] ?? false;
+    final bool isLightOn = _dashboardData['devices']?['is_light_on'] ?? false;
+    try {
+      final summary = await EnergyTrackingService.getTodayEnergySummary(
+        isFanOn: isFanOn,
+        isLightOn: isLightOn,
+      );
+      if (mounted) {
+        setState(() => _energySummary = summary);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadData() async {
@@ -36,6 +62,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {
       // Handled silently with fallback
     }
+
+    final bool isFanOn = _dashboardData['devices']?['is_fan_on'] ?? false;
+    final bool isLightOn = _dashboardData['devices']?['is_light_on'] ?? false;
+    try {
+      _energySummary = await EnergyTrackingService.getTodayEnergySummary(
+        isFanOn: isFanOn,
+        isLightOn: isLightOn,
+      );
+    } catch (_) {}
     
     if (mounted) {
       setState(() => _isLoading = false);
@@ -213,7 +248,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.12),
+                                color: AppColors.primary.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(Icons.school_rounded, color: AppColors.primary, size: 22),
@@ -285,10 +320,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: now.hour >= 11 ? Colors.red.withOpacity(0.08) : Colors.amber.withOpacity(0.08),
+                              color: now.hour >= 11 ? Colors.red.withValues(alpha: 0.08) : Colors.amber.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: now.hour >= 11 ? Colors.red.withOpacity(0.25) : Colors.amber.withOpacity(0.25),
+                                color: now.hour >= 11 ? Colors.red.withValues(alpha: 0.25) : Colors.amber.withValues(alpha: 0.25),
                               ),
                             ),
                             child: Row(
@@ -480,7 +515,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Relay Pin: GPIO 27 \u2022 Rated Draw: 0.48 kW',
+                          'Relay Pin: GPIO 27 \u2022 Rated Draw: 75 W (0.075 kW)',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ],
@@ -537,7 +572,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Relay Pin: GPIO 26 \u2022 Rated Draw: 0.15 kW',
+                          'Relay Pin: GPIO 26 \u2022 Rated Draw: 40 W (0.040 kW)',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ],
@@ -561,6 +596,113 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Real-Time Energy Consumption Monitor Box
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.35)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: const [
+                          Icon(Icons.bolt, color: Colors.amberAccent, size: 20),
+                          SizedBox(width: 6),
+                          Text(
+                            'Energy Consumption Today',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: (_energySummary?.activeWatts ?? 0) > 0 ? Colors.green.withValues(alpha: 0.25) : Colors.white10,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: (_energySummary?.activeWatts ?? 0) > 0 ? Colors.greenAccent : Colors.white24,
+                          ),
+                        ),
+                        child: Text(
+                          (_energySummary?.activeWatts ?? 0) > 0
+                              ? '${_energySummary!.activeWatts} W Load'
+                              : '0 W (Idle)',
+                          style: TextStyle(
+                            color: (_energySummary?.activeWatts ?? 0) > 0 ? Colors.greenAccent : Colors.white70,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Total Energy', style: TextStyle(color: Colors.white60, fontSize: 10)),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_energySummary?.totalKwh.toStringAsFixed(4) ?? '0.0000'} kWh',
+                              style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Exhaust Fan (75W)', style: TextStyle(color: Colors.white60, fontSize: 10)),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_energySummary?.fanKwh.toStringAsFixed(4) ?? '0.0000'} kWh',
+                              style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            Text(
+                              '${((_energySummary?.fanActiveSecondsToday ?? 0) / 60).round()}m active',
+                              style: const TextStyle(color: Colors.white54, fontSize: 10),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('LED Light (40W)', style: TextStyle(color: Colors.white60, fontSize: 10)),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_energySummary?.lightKwh.toStringAsFixed(4) ?? '0.0000'} kWh',
+                              style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            Text(
+                              '${((_energySummary?.lightActiveSecondsToday ?? 0) / 60).round()}m active',
+                              style: const TextStyle(color: Colors.white54, fontSize: 10),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 14),
 
             // Control Action Button
@@ -568,7 +710,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.tune, size: 18),
-                label: const Text('Open Lab Controls & Relays'),
+                label: const Text('Open Lab Controls & Energy Meter'),
                 style: OutlinedButton.styleFrom(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   padding: const EdgeInsets.symmetric(vertical: 10),
