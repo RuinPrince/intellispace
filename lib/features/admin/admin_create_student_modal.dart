@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/widgets/student_avatar.dart';
@@ -109,11 +111,27 @@ class _AdminCreateStudentModalState extends State<AdminCreateStudentModal> {
 
   Future<void> _pickCustomAvatar(ImageSource source) async {
     try {
-      final picked = await _picker.pickImage(source: source, imageQuality: 90);
+      final picked = await _picker.pickImage(source: source, imageQuality: 85);
       if (picked != null) {
+        final bytes = await picked.readAsBytes();
+        final decoded = img.decodeImage(bytes);
+        String base64Str;
+        if (decoded != null) {
+          final resized = img.copyResize(
+            decoded,
+            width: 240,
+            height: 280,
+            interpolation: img.Interpolation.linear,
+          );
+          final jpg = img.encodeJpg(resized, quality: 80);
+          base64Str = 'data:image/jpeg;base64,${base64Encode(jpg)}';
+        } else {
+          base64Str = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        }
+
         setState(() {
           _customPhotoPath = picked.path;
-          _avatarBase64 = picked.path; // StudentAvatar widget handles file paths
+          _avatarBase64 = base64Str;
         });
       }
     } catch (e) {

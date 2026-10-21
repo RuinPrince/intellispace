@@ -685,6 +685,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                             // Real Student Photo
                             StudentAvatar(
                               avatarUrl: _retrievedStudent!.avatarUrl,
+                              barcode: _retrievedStudent!.barcode,
                               studentName: _retrievedStudent!.name,
                               width: 84,
                               height: 100,
@@ -990,6 +991,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
             child: ListTile(
               leading: StudentAvatar(
                 avatarUrl: student.avatarUrl,
+                barcode: student.barcode,
                 studentName: student.name,
                 radius: 24,
                 borderRadius: BorderRadius.circular(24),
@@ -1091,6 +1093,7 @@ class _AdminStudentScreenState extends State<AdminStudentScreen> with SingleTick
                       children: [
                         StudentAvatar(
                           avatarUrl: student.avatarUrl,
+                          barcode: student.barcode,
                           studentName: student.name,
                           width: 72,
                           height: 90,

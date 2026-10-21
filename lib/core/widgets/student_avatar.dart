@@ -1,15 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../services/student_photo_cloud_service.dart';
 
 /// Reusable student avatar widget that cleanly displays:
 /// - Base64 encoded images (data:image or raw base64)
 /// - Local file paths
 /// - Network URLs
+/// - Synced cloud photos via barcode
 /// - Fallback letter initial or icon
 class StudentAvatar extends StatelessWidget {
   final String? avatarUrl;
   final String? studentName;
+  final String? barcode;
   final double? width;
   final double? height;
   final double? radius;
@@ -21,6 +24,7 @@ class StudentAvatar extends StatelessWidget {
     super.key,
     this.avatarUrl,
     this.studentName,
+    this.barcode,
     this.width,
     this.height,
     this.radius,
@@ -41,8 +45,16 @@ class StudentAvatar extends StatelessWidget {
 
     Widget imageWidget = _buildFallback(context);
 
-    if (avatarUrl != null && avatarUrl!.trim().isNotEmpty) {
-      final url = avatarUrl!.trim();
+    String? effectiveUrl = (avatarUrl != null && avatarUrl!.trim().isNotEmpty)
+        ? avatarUrl!.trim()
+        : null;
+
+    if ((effectiveUrl == null || effectiveUrl.isEmpty) && barcode != null && barcode!.trim().isNotEmpty) {
+      effectiveUrl = StudentPhotoCloudService.getPhotoSync(barcode!);
+    }
+
+    if (effectiveUrl != null && effectiveUrl.isNotEmpty) {
+      final url = effectiveUrl;
 
       try {
         if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -73,6 +85,20 @@ class StudentAvatar extends StatelessWidget {
               fit: fit,
               errorBuilder: (context, error, stackTrace) => _buildFallback(context),
             );
+          } else if (barcode != null && barcode!.trim().isNotEmpty) {
+            // Local file doesn't exist on this device - try cloud photo
+            final cloudPhoto = StudentPhotoCloudService.getPhotoSync(barcode!);
+            if (cloudPhoto != null && cloudPhoto.isNotEmpty && cloudPhoto != url) {
+              final cleanBase64 = cloudPhoto.contains(',') ? cloudPhoto.split(',').last : cloudPhoto;
+              final bytes = base64Decode(cleanBase64.replaceAll('\n', '').replaceAll('\r', '').trim());
+              imageWidget = Image.memory(
+                bytes,
+                width: effectiveWidth,
+                height: effectiveHeight,
+                fit: fit,
+                errorBuilder: (context, error, stackTrace) => _buildFallback(context),
+              );
+            }
           }
         }
       } catch (_) {
@@ -93,8 +119,10 @@ class StudentAvatar extends StatelessWidget {
   }
 
   bool _isBase64(String str) {
-    if (str.length < 20) return false;
-    return !str.contains('/') || str.length > 100;
+    if (str.startsWith('data:image')) return true;
+    if (str.startsWith('/') || str.startsWith('file:') || str.contains('\\') || str.startsWith('http')) return false;
+    if (str.length < 50) return false;
+    return RegExp(r'^[A-Za-z0-9+/=\r\n]+$').hasMatch(str.replaceAll('\n', '').replaceAll('\r', '').trim());
   }
 
   Widget _buildFallback(BuildContext context) {

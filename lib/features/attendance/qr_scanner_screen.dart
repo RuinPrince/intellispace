@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:intl/intl.dart';
 import '../../core/api/api_client.dart';
+import '../../core/widgets/student_avatar.dart';
 import '../../repositories/api_attendance_repository.dart';
 import '../../repositories/student_directory.dart';
+import '../../services/student_photo_cloud_service.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -76,8 +78,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
 
     try {
       // 1. Check local student ID registry
-      final cardDetails = StudentDirectory.findByBarcode(cleanDigits) ?? 
-                          StudentDirectory.findByBarcode(trimmedRaw);
+      StudentIdCardDetails? cardDetails = StudentDirectory.findByBarcode(cleanDigits) ?? 
+                                          StudentDirectory.findByBarcode(trimmedRaw);
 
       // 2. Lookup or sync with Supabase
       String studentId = cardDetails?.id ?? '';
@@ -98,6 +100,39 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
         }
       } catch (e) {
         print('[BarcodeScanner] Supabase lookup error (using local): $e');
+      }
+
+      // 3. Ensure student photo is loaded from cloud if missing
+      String avatar = cardDetails?.avatarUrl ?? '';
+      if (avatar.isEmpty || avatar.startsWith('/')) {
+        final cloudPhoto = await StudentPhotoCloudService.getPhoto(cleanDigits) ??
+                           await StudentPhotoCloudService.getPhoto(regNo);
+        if (cloudPhoto != null && cloudPhoto.isNotEmpty) {
+          avatar = cloudPhoto;
+          if (cardDetails != null) {
+            cardDetails = cardDetails.copyWith(avatarUrl: cloudPhoto);
+          }
+        }
+      }
+
+      if (cardDetails == null && studentId.isNotEmpty) {
+        cardDetails = StudentIdCardDetails(
+          id: studentId,
+          barcode: regNo,
+          name: studentName,
+          course: 'B.Tech.',
+          department: dept,
+          college: 'K.L.N. COLLEGE OF ENGINEERING',
+          collegeAffiliation: 'An Autonomous Institution, Affiliated to Anna University, Chennai (Accredited by NAAC)',
+          validity: 'August 2023 to May 2027',
+          address: 'Campus Residential Hall, Pottapalayam',
+          pincode: '630612',
+          email: '$cleanDigits@college.edu',
+          phones: const ['9842014033'],
+          dob: '19-12-2005',
+          bloodGroup: 'O+VE',
+          avatarUrl: avatar,
+        );
       }
 
       if (cardDetails != null || studentId.isNotEmpty) {
@@ -303,10 +338,21 @@ class _QrScannerScreenState extends State<QrScannerScreen> with SingleTickerProv
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(color: Colors.orange.shade300, width: 1.5),
                                 ),
+                                clipBehavior: Clip.antiAlias,
                                 child: Stack(
                                   alignment: Alignment.center,
                                   children: [
-                                    Icon(Icons.person, size: 64, color: Colors.blueGrey.shade400),
+                                    Positioned.fill(
+                                      child: StudentAvatar(
+                                        avatarUrl: details?.avatarUrl,
+                                        barcode: details?.barcode ?? regNo,
+                                        studentName: name,
+                                        width: 90,
+                                        height: 110,
+                                        borderRadius: BorderRadius.circular(9),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
                                     Positioned(
                                       bottom: 4,
                                       child: Container(

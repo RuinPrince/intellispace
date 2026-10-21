@@ -9,7 +9,10 @@ class ApiNotificationRepository {
     try {
       final response = await _api.get(ApiConfig.notificationsUnread);
       if (response is List) {
-        return response.map((json) => NotificationItem.fromJson(json)).toList();
+        return response
+            .map((json) => NotificationItem.fromJson(json))
+            .where((n) => !n.title.startsWith('STUDENT_AVATAR_'))
+            .toList();
       }
       return [];
     } catch (e) {

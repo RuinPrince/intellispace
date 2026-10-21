@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api/api_client.dart';
+import '../services/student_photo_cloud_service.dart';
+
 
 class AcademicConfig {
   final String semesterDuration;
@@ -261,6 +263,7 @@ class StudentDirectory {
   static Future<void> init() async {
     if (_initialized) return;
     try {
+      await StudentPhotoCloudService.init();
       final prefs = await SharedPreferences.getInstance();
       
       // Load Academic Config
@@ -295,16 +298,20 @@ class StudentDirectory {
 
       _initialized = true;
 
-      // Sync with cloud database
+      // Sync with cloud database and cloud photo repository
       await syncFromCloud();
     } catch (e) {
       print('StudentDirectory.init error: $e');
     }
   }
 
-  /// Syncs students directly from Supabase PostgreSQL cloud table
+  /// Syncs students and their photos directly from Supabase PostgreSQL cloud table
   static Future<void> syncFromCloud() async {
     try {
+      // 1. Synchronize all uploaded photos from Supabase Cloud
+      final cloudPhotos = await StudentPhotoCloudService.syncAllPhotos();
+
+      // 2. Synchronize students metadata from Supabase Cloud
       final api = ApiClient();
       final response = await api.get('/students?select=*&order=id.asc');
       if (response is List && response.isNotEmpty) {
@@ -313,6 +320,7 @@ class StudentDirectory {
           final regNum = s['register_number']?.toString() ?? '';
           if (regNum.isEmpty) continue;
           final clean = cleanCode(regNum);
+          final photo = cloudPhotos[clean] ?? StudentPhotoCloudService.getPhotoSync(clean) ?? '';
 
           // Skip if dummy
           final sName = (s['student_name'] ?? '').toString().toLowerCase();
@@ -327,6 +335,7 @@ class StudentDirectory {
               year: s['year']?.toString() ?? _registry[existingIndex].year,
               section: s['section'] ?? _registry[existingIndex].section,
               email: s['email'] ?? _registry[existingIndex].email,
+              avatarUrl: photo.isNotEmpty ? photo : _registry[existingIndex].avatarUrl,
             );
           } else {
             // Add new student from cloud
@@ -345,6 +354,7 @@ class StudentDirectory {
               phones: [s['phone'] ?? '9842014033'],
               dob: s['dob'] ?? '19-12-2005',
               bloodGroup: s['blood_group'] ?? 'O+VE',
+              avatarUrl: photo,
               year: s['year']?.toString() ?? _currentConfig.year,
               section: s['section'] ?? _currentConfig.section,
               semester: _currentConfig.semester,
@@ -353,10 +363,22 @@ class StudentDirectory {
             ));
           }
         }
-        final prefs = await SharedPreferences.getInstance();
-        final list = _registry.map((s) => s.toJson()).toList();
-        await prefs.setString(_prefsKeyStudents, jsonEncode(list));
       }
+
+      // 3. Ensure any student in directory without photo receives their cloud photo
+      for (int i = 0; i < _registry.length; i++) {
+        final clean = cleanCode(_registry[i].barcode);
+        final cloudPhoto = cloudPhotos[clean] ?? StudentPhotoCloudService.getPhotoSync(clean);
+        if (cloudPhoto != null && cloudPhoto.isNotEmpty) {
+          if (_registry[i].avatarUrl.isEmpty || _registry[i].avatarUrl.startsWith('/')) {
+            _registry[i] = _registry[i].copyWith(avatarUrl: cloudPhoto);
+          }
+        }
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final list = _registry.map((s) => s.toJson()).toList();
+      await prefs.setString(_prefsKeyStudents, jsonEncode(list));
     } catch (e) {
       print('syncFromCloud error: $e');
     }
@@ -401,22 +423,34 @@ class StudentDirectory {
     final rawClean = code.trim().toLowerCase();
     final digits = cleanCode(code);
 
-    for (final student in _registry) {
+    for (int i = 0; i < _registry.length; i++) {
+      final student = _registry[i];
       final studentDigits = cleanCode(student.barcode);
       
-      if (student.barcode.toLowerCase() == rawClean ||
+      bool matches = student.barcode.toLowerCase() == rawClean ||
           student.barcode.toLowerCase() == digits ||
           studentDigits == digits ||
           student.id == rawClean ||
           student.id == digits ||
-          student.name.toLowerCase().contains(rawClean)) {
-        return student;
+          student.name.toLowerCase().contains(rawClean);
+
+      if (!matches && digits.isNotEmpty && studentDigits.isNotEmpty) {
+        if (digits.endsWith(studentDigits) || studentDigits.endsWith(digits)) {
+          matches = true;
+        }
       }
 
-      if (digits.isNotEmpty && studentDigits.isNotEmpty) {
-        if (digits.endsWith(studentDigits) || studentDigits.endsWith(digits)) {
-          return student;
+      if (matches) {
+        if (student.avatarUrl.isEmpty || student.avatarUrl.startsWith('/')) {
+          final cloudPhoto = StudentPhotoCloudService.getPhotoSync(studentDigits) ??
+                             StudentPhotoCloudService.getPhotoSync(digits);
+          if (cloudPhoto != null && cloudPhoto.isNotEmpty) {
+            final updated = student.copyWith(avatarUrl: cloudPhoto);
+            _registry[i] = updated;
+            return updated;
+          }
         }
+        return student;
       }
     }
     return null;
@@ -428,13 +462,33 @@ class StudentDirectory {
     return findByBarcode(query);
   }
 
-  /// Admin method: Save or update a student
+  /// Admin method: Save or update a student with Cloud Photo sync
   static Future<void> saveStudent(StudentIdCardDetails student) async {
-    final index = _registry.indexWhere((s) => s.id == student.id || cleanCode(s.barcode) == cleanCode(student.barcode));
+    final clean = cleanCode(student.barcode);
+    String effectiveAvatar = student.avatarUrl;
+
+    // Upload / sync photo to Supabase Cloud if provided
+    if (effectiveAvatar.isNotEmpty) {
+      try {
+        final cloudPhoto = await StudentPhotoCloudService.uploadPhoto(
+          barcode: clean,
+          photoDataOrPath: effectiveAvatar,
+        );
+        if (cloudPhoto != null && cloudPhoto.isNotEmpty) {
+          effectiveAvatar = cloudPhoto;
+        }
+      } catch (photoErr) {
+        print('Error uploading photo to cloud: $photoErr');
+      }
+    }
+
+    final updatedStudent = student.copyWith(avatarUrl: effectiveAvatar);
+
+    final index = _registry.indexWhere((s) => s.id == updatedStudent.id || cleanCode(s.barcode) == clean);
     if (index != -1) {
-      _registry[index] = student;
+      _registry[index] = updatedStudent;
     } else {
-      _registry.add(student);
+      _registry.add(updatedStudent);
     }
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -444,24 +498,23 @@ class StudentDirectory {
       // Asynchronous cloud sync to Supabase PostgreSQL
       try {
         final api = ApiClient();
-        final clean = cleanCode(student.barcode);
         final existing = await api.get('/students?register_number=eq.$clean');
         if (existing is List && existing.isNotEmpty) {
           await api.patch('/students?register_number=eq.$clean', body: {
-            'student_name': student.name,
-            'department': student.department,
-            'email': student.email,
-            'year': int.tryParse(student.year) ?? 3,
-            'section': student.section,
+            'student_name': updatedStudent.name,
+            'department': updatedStudent.department,
+            'email': updatedStudent.email,
+            'year': int.tryParse(updatedStudent.year) ?? 3,
+            'section': updatedStudent.section,
           });
         } else {
           await api.post('/students', body: {
-            'student_name': student.name,
+            'student_name': updatedStudent.name,
             'register_number': clean,
-            'department': student.department,
-            'year': int.tryParse(student.year) ?? 3,
-            'section': student.section,
-            'email': student.email,
+            'department': updatedStudent.department,
+            'year': int.tryParse(updatedStudent.year) ?? 3,
+            'section': updatedStudent.section,
+            'email': updatedStudent.email,
             'is_active': true,
           });
         }
@@ -493,6 +546,7 @@ class StudentDirectory {
         final api = ApiClient();
         final regClean = cleanCode(removed.barcode);
         await api.delete('/students?register_number=eq.$regClean');
+        await StudentPhotoCloudService.deletePhoto(regClean);
       } catch (cloudErr) {
         print('Supabase student cloud delete error: $cloudErr');
       }

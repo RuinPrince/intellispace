@@ -176,6 +176,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                       children: [
                         StudentAvatar(
                           avatarUrl: details?.avatarUrl,
+                          barcode: details?.barcode ?? rollNo,
                           studentName: name,
                           width: 80,
                           height: 96,
@@ -453,6 +454,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                                   // Student Avatar with Photo or Initial Fallback
                                   StudentAvatar(
                                     avatarUrl: StudentDirectory.findByBarcode(record.student.registerNumber)?.avatarUrl,
+                                    barcode: record.student.registerNumber,
                                     studentName: record.student.name,
                                     radius: 22,
                                     borderRadius: BorderRadius.circular(22),
