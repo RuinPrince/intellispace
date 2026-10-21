@@ -7,6 +7,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/widgets/status_card.dart';
 import '../auth/auth_provider.dart';
 import '../../repositories/api_dashboard_repository.dart';
+import 'widgets/live_ongoing_period_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -124,7 +125,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+
+                // Live Ongoing Period & Real-Time Countdown Widget
+                const LiveOngoingPeriodWidget(),
 
                 // Status Grid
                 GridView.count(
